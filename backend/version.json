@@ -1,0 +1,17 @@
+{
+  "version": "1.0.1",
+  "history": [
+    {
+      "version": "1.0.1",
+      "type": "patch",
+      "note": "fix all the project",
+      "date": "2026-04-23T12:48:22.165Z"
+    },
+    {
+      "version": "1.0.0",
+      "type": "major",
+      "note": "Version initiale — moteur REQ, 4 signaux, dashboard",
+      "date": "2026-04-23T00:00:00.000Z"
+    }
+  ]
+}
