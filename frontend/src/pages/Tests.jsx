@@ -326,21 +326,21 @@ export default function Tests() {
 
   const handleResetDB = () => {
     setConfirm({
-      title: lang === 'fr' ? 'Réinitialiser la base ?' : 'Reset database?',
-      message: lang === 'fr' ? 'Supprime TOUTE la base et recharge les 2.9M du registre. Irréversible.' : 'Deletes ALL data and reloads 2.9M registry entries. Irreversible.',
-      confirmLabel: lang === 'fr' ? '✕ Réinitialiser' : '✕ Reset',
+      title: lang === 'fr' ? 'Supprimer la base ?' : 'Delete database?',
+      message: lang === 'fr' ? 'Supprime TOUS les leads. Irréversible. Le moteur ne se relance pas.' : 'Deletes ALL leads. Irreversible. Engine does not restart.',
+      confirmLabel: lang === 'fr' ? '✕ Supprimer' : '✕ Delete',
       color: '#ef4444',
       onConfirm: async () => {
         setConfirm(null)
         setResetDBState('loading')
-        addLog(lang === 'fr' ? 'Reset DB lancé...' : 'DB reset started...', 'info')
+        addLog(lang === 'fr' ? 'Suppression en cours...' : 'Deleting...', 'info')
         try {
-          await resetDB()
+          const { data } = await api.delete('/leads/reset-db')
           setResetDBState('ok')
-          addLog(lang === 'fr' ? 'Reset DB lancé — rechargement baseline en cours' : 'DB reset launched — reloading baseline', 'ok')
+          addLog(lang === 'fr' ? `Base supprimée — ${data.deleted} documents effacés` : `Database deleted — ${data.deleted} documents removed`, 'ok')
         } catch (e) {
           setResetDBState('error')
-          addLog(t('common.error') + ' Reset DB : ' + (e.response?.data?.error || e.message), 'error')
+          addLog(t('common.error') + ' : ' + (e.response?.data?.error || e.message), 'error')
         }
         setTimeout(() => setResetDBState(null), 4000)
       }
