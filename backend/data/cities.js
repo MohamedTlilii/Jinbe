@@ -222,20 +222,4 @@ const CITIES = [
   { id: 'baie-saint-paul',        group: 'quebec', name: 'Baie-Saint-Paul',                 active: true, variants: ['Baie-Saint-Paul','BAIE-SAINT-PAUL'] },
 ];
 
-const getActiveCities      = () => CITIES.filter(c => c.active);
-const getGroupCities       = (group) => CITIES.filter(c => c.group === group && c.active);
-
-const matchCity = (cityName, postalCode = '') => {
-  for (const city of getActiveCities()) {
-    const matches = city.variants.some(v => v.toLowerCase() === cityName.toLowerCase());
-    if (matches) {
-      if (city.postalFilter && postalCode) {
-        return city.postalFilter.test(postalCode) ? city : null;
-      }
-      return city;
-    }
-  }
-  return null;
-};
-
-module.exports = { CITIES, getActiveCities, getGroupCities, matchCity };
+module.exports = { CITIES };

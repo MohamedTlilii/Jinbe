@@ -2,7 +2,9 @@
 import { useState, useEffect } from 'react'
 import api from '../utils/api'
 import { ScoreBadge, SignalBadge, fmtDate } from '../components/ui/index'
+import { generateLeadPDF } from '../utils/pdf'
 import { useT } from '../i18n/useT'
+import { LeadDetailModal } from '../components/ui/LeadDetailModal'
 
 const fmtDuration = (ms) => {
   if (!ms) return '—'
@@ -20,16 +22,17 @@ const lnk = (color) => ({
   borderRadius: 6, textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
 })
 
-function LeadCard({ lead, noname }) {
+function LeadCard({ lead, noname, onOpen }) {
   const sc = lead.signal === 'nouvelle' ? '#4ade80'
     : lead.signal === 'reouverture' ? '#2dd4bf'
     : lead.signal === 'demenagement' ? '#fb923c'
     : '#f87171'
   return (
-    <div style={{
+    <div onClick={onOpen} style={{
       background: '#ffffff04', borderRadius: 11, padding: '0.85rem',
       border: '1px solid var(--border)', borderLeft: `3px solid ${sc}`,
-      transition: 'border-color 0.15s',
+      transition: 'border-color 0.15s', cursor: 'pointer',
+      position: 'relative',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
         <ScoreBadge score={lead.score} />
@@ -48,20 +51,20 @@ function LeadCard({ lead, noname }) {
       <div style={{ fontSize: 10, color: 'var(--text3)', opacity: 0.6, marginBottom: 9 }}>
         {fmtDate(lead.dateCreation)} · NEQ {lead.neq}
       </div>
-      {lead.signal !== 'fermeture' && (
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-          <a href={`https://www.google.com/search?q=${encodeURIComponent([lead.adresse,lead.ville,'QC',lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={lnk('#4285f4')}>📍 Maps</a>
-          <a href={`https://www.facebook.com/search/top?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#3b82f6')}>📘 FB</a>
-          <a href={`https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#e879f9')}>📸 IG</a>
-          <a href={`https://www.google.com/search?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#4ade80')}>🌐 Web</a>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        <a href={`https://www.google.com/maps/search/?q=${encodeURIComponent([lead.adresse,lead.ville,'QC',lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={lnk('#4285f4')}>📍 Maps</a>
+        <a href={`https://www.google.com/search?q=${encodeURIComponent([lead.adresse,lead.ville,'QC',lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={lnk('#0f9d58')}>🔍 Google</a>
+        <a href={`https://www.facebook.com/search/top?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#3b82f6')}>📘 FB</a>
+        <a href={`https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#e879f9')}>📸 IG</a>
+        <a href={`https://www.google.com/search?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#4ade80')}>🌐 Web</a>
+        <button onClick={() => generateLeadPDF(lead)} style={{ ...lnk('#a78bfa'), background: '#a78bfa12', border: '1px solid #a78bfa30', cursor: 'pointer' }}>↓ PDF</button>
+      </div>
     </div>
   )
 }
 
 export default function Nouveautes() {
-  const t = useT()
+  const t      = useT()
 
   const SECTIONS = [
     { signal: 'nouvelle',     label: t('lastrun.nouvelles'), color: '#4ade80', icon: '✦' },
@@ -70,10 +73,12 @@ export default function Nouveautes() {
     { signal: 'fermeture',    label: t('lastrun.ferm'),      color: '#f87171', icon: '✕' },
   ]
 
-  const [leads,   setLeads]   = useState([])
-  const [version, setVersion] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [runs,    setRuns]    = useState([])
+  const [leads,      setLeads]      = useState([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [version,    setVersion]    = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [runs,       setRuns]       = useState([])
+  const [modalLead,  setModalLead]  = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -83,6 +88,7 @@ export default function Nouveautes() {
         api.get('/runs/latest'),
       ])
       setLeads(leadsRes.data.leads || [])
+      setTotalCount(leadsRes.data.total ?? (leadsRes.data.leads || []).length)
       setVersion(leadsRes.data.version)
       setRuns(runsRes.data || [])
     } catch (e) { console.error(e) }
@@ -93,7 +99,7 @@ export default function Nouveautes() {
 
   const grouped  = {}
   for (const s of SECTIONS) grouped[s.signal] = leads.filter(l => l.signal === s.signal)
-  const total    = leads.length
+  const total    = totalCount
   const lastRun  = runs[0] || null
   const prevRun  = runs[1] || null
   const runDate  = version ? new Date(version).toLocaleString('fr-CA') : null
@@ -281,7 +287,7 @@ export default function Nouveautes() {
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10 }}>
-                    {items.map(lead => <LeadCard key={lead._id} lead={lead} noname={t('signal.noname')} />)}
+                    {items.map(lead => <LeadCard key={lead._id} lead={lead} noname={t('signal.noname')} onOpen={() => setModalLead(lead)} />)}
                   </div>
                 </div>
               )
@@ -290,6 +296,7 @@ export default function Nouveautes() {
         </>
       )}
 
+      {modalLead && <LeadDetailModal lead={modalLead} onClose={() => setModalLead(null)} />}
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>

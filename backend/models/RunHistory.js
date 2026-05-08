@@ -17,4 +17,6 @@ const RunHistorySchema = new mongoose.Schema({
   },
 });
 
+RunHistorySchema.index({ startedAt: -1 });
+
 module.exports = mongoose.model('RunHistory', RunHistorySchema);

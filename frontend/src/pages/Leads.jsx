@@ -3,13 +3,12 @@ import { useState, useEffect } from 'react'
 import api from '../utils/api'
 import { ScoreBadge, SignalBadge, fmtDate } from '../components/ui/index'
 import { generateLeadPDF } from '../utils/pdf'
+import { LeadDetailModal } from '../components/ui/LeadDetailModal'
 import { useT } from '../i18n/useT'
 import { useUiStore } from '../store/uiStore'
 
 const DAYS_FR   = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim']
-const DAYS_EN   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
-const MONTHS_EN = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 const lnk = (color) => ({
   fontSize: 10, padding: '3px 9px', fontWeight: 700,
@@ -19,11 +18,10 @@ const lnk = (color) => ({
 })
 
 export default function Leads() {
-  const t    = useT()
+  const t      = useT()
   const { lang } = useUiStore()
-
-  const DAYS    = lang === 'fr' ? DAYS_FR : DAYS_EN
-  const MONTHS  = lang === 'fr' ? MONTHS_FR : MONTHS_EN
+  const DAYS    = DAYS_FR
+  const MONTHS  = MONTHS_FR
 
   const SIG = {
     fermeture:    { color: '#f87171', label: t('fermeture.label') },
@@ -45,6 +43,7 @@ export default function Leads() {
   const [selectedDay, setSelectedDay] = useState(null)
   const [dayLeads,    setDayLeads]    = useState([])
   const [loadingDay,  setLoadingDay]  = useState(false)
+  const [modalLead,   setModalLead]   = useState(null)
   const [filters, setFilters] = useState({ signal: '', ville: '', score: '' })
 
   const year  = currentDate.getFullYear()
@@ -78,8 +77,11 @@ export default function Leads() {
     setLoadingDay(false)
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadCalendar() }, [currentDate, filters])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { selectDay(new Date().getDate()) }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (selectedDay) selectDay(selectedDay) }, [filters])
 
   const prevMonth = () => { const d = new Date(currentDate); d.setMonth(d.getMonth()-1); setCurrentDate(d); setSelectedDay(null) }
@@ -333,12 +335,13 @@ export default function Leads() {
                 {dayLeads.map(lead => {
                   const sc = SIG[lead.signal]?.color || '#a78bfa'
                   return (
-                    <div key={lead._id} style={{
+                    <div key={lead._id} onClick={() => setModalLead(lead)} style={{
                       background: '#ffffff04',
                       borderRadius: 11, padding: '0.85rem',
                       border: '1px solid var(--border)',
                       borderLeft: `3px solid ${sc}`,
-                      transition: 'all 0.15s',
+                      transition: 'all 0.15s', cursor: 'pointer',
+                      position: 'relative',
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                         <ScoreBadge score={lead.score} />
@@ -357,7 +360,8 @@ export default function Leads() {
                         {fmtDate(lead.dateCreation)} · NEQ {lead.neq}
                       </div>
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                        <a href={`https://www.google.com/search?q=${encodeURIComponent([lead.adresse,lead.ville,'QC',lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={lnk('#4285f4')}>📍 Maps</a>
+                        <a href={`https://www.google.com/maps/search/?q=${encodeURIComponent([lead.adresse,lead.ville,'QC',lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={lnk('#4285f4')}>📍 Maps</a>
+                        <a href={`https://www.google.com/search?q=${encodeURIComponent([lead.adresse,lead.ville,'QC',lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={lnk('#0f9d58')}>🔍 Google</a>
                         <a href={`https://www.facebook.com/search/top?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#3b82f6')}>📘 FB</a>
                         <a href={`https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#e879f9')}>📸 IG</a>
                         <a href={`https://www.google.com/search?q=${encodeURIComponent(lead.nom||lead.secteurMatch)}`} target="_blank" rel="noreferrer" style={lnk('#4ade80')}>🌐 Web</a>
@@ -372,6 +376,7 @@ export default function Leads() {
         )}
       </div>
 
+      {modalLead && <LeadDetailModal lead={modalLead} onClose={() => setModalLead(null)} />}
       <style>{`
         @keyframes slideIn { from { opacity:0; transform:translateX(14px); } to { opacity:1; transform:translateX(0); } }
       `}</style>

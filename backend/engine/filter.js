@@ -1,7 +1,17 @@
 // engine/filter.js
 const fs       = require('fs');
 const readline = require('readline');
-const { scoreLead } = require('./scorer');
+const { scoreLead }   = require('./scorer');
+const { matchSector } = require('../data/sectors');
+const { CITIES }      = require('../data/cities');
+
+// Map variant.toLowerCase() → { group, postalFilter } — construite une seule fois au démarrage
+const VARIANT_GROUP = new Map();
+for (const city of CITIES.filter(c => c.active)) {
+  for (const v of city.variants) {
+    VARIANT_GROUP.set(v.toLowerCase(), { group: city.group, postalFilter: city.postalFilter || null });
+  }
+}
 
 const col = (obj, ...candidates) => {
   if (!obj) return '';
@@ -27,20 +37,31 @@ const extractCity = (raw) => raw
   ? raw.replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+QC\s*$/i, '').replace(/\s+ON\s*$/i, '').trim()
   : '';
 
+// RFC 4180 compliant: gère les guillemets doublés "" à l'intérieur des champs
 const parseLine = (line) => {
   const result = [];
   let cur = '', inQ = false;
-  for (const ch of line) {
-    if (ch === '"') { inQ = !inQ; }
-    else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
-    else cur += ch;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } // guillemet échappé ""
+        else inQ = false;
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === '"') { inQ = true; }
+      else if (ch === ',') { result.push(cur); cur = ''; }
+      else cur += ch;
+    }
   }
   result.push(cur);
   return result;
 };
 
 // Streaming par batch — ne charge jamais tout en mémoire
-const filterAndEnrich = async (entreprisePath, etablissementsMap, nomMap, settings, wsLog, onBatch = null, limit = 0) => {
+const filterAndEnrich = async (entreprisePath, etablissementsMap, nomMap, wsLog, onBatch = null, limit = 0) => {
   wsLog('Streaming Entreprise.csv — toutes les entreprises...');
 
   const BATCH_SIZE = 50000;
@@ -78,7 +99,7 @@ const filterAndEnrich = async (entreprisePath, etablissementsMap, nomMap, settin
       const row  = {};
       headers.forEach((h, i) => { row[h] = (cols[i] || '').replace(/^"|"$/g, '').trim(); });
 
-      const neq      = col(row, 'NEQ', 'neq');
+      const neq = col(row, 'NEQ', 'neq');
       if (!neq) return;
       if (limit > 0 && total > limit) { rl.close(); return; }
 
@@ -94,9 +115,27 @@ const filterAndEnrich = async (entreprisePath, etablissementsMap, nomMap, settin
       const nom       = nomMap[neq]   || col(row, 'NOM', 'Nom', 'NOM_ASSUJ', 'NOM_ENTREPRISE') || 'Non déclaré';
       const dateStr   = col(row, 'DAT_IMMAT', 'DAT_CONSTI', 'DATE_CONSTITUTION');
       const dateCreation = dateStr ? new Date(dateStr) : null;
-      const { score, scoreDetails } = scoreLead(dateCreation, 1);
 
-      batch.push({ neq, nom, adresse, ville, groupe: '', codePostal: cp, province: 'QC', secteurActivite: activite, secteurMatch: activite, categorieSecteur: 'general', dateCreation, statutREQ, signal: 'nouvelle', score, scoreDetails });
+      // Matching secteur réel — détermine score secteur et catégorie
+      const matched         = matchSector(activite);
+      const secteurMatch    = matched ? matched.name : (activite || '');
+      const categorieSecteur= matched ? matched.category : 'general';
+      const scoreSecteur    = matched ? matched.score : 0;
+
+      const { score, scoreDetails } = scoreLead(dateCreation, scoreSecteur);
+
+      const cityEntry = VARIANT_GROUP.get(ville.toLowerCase());
+      const groupe = cityEntry
+        ? (!cityEntry.postalFilter || cityEntry.postalFilter.test(cp)) ? cityEntry.group : ''
+        : '';
+
+      batch.push({
+        neq, nom, adresse, ville,
+        groupe, codePostal: cp, province: 'QC',
+        secteurActivite: activite,
+        secteurMatch, categorieSecteur,
+        dateCreation, statutREQ, signal: 'nouvelle', score, scoreDetails,
+      });
 
       if (onBatch && batch.length >= BATCH_SIZE) {
         rl.pause();
@@ -120,7 +159,6 @@ const filterAndEnrich = async (entreprisePath, etablissementsMap, nomMap, settin
 
   wsLog('Total traités : ' + total.toLocaleString('fr-CA'));
 
-  // Mode sans callback — retourner le tableau (petits volumes seulement)
   return onBatch ? [] : batch;
 };
 

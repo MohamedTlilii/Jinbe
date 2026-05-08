@@ -16,7 +16,6 @@ export default function Engine() {
   const isProcessing = status.isProcessing
   const col    = isProcessing ? '#00ff88' : isActive ? '#00cc66' : '#ef4444'
   const colDim = isProcessing ? '#00ff8830' : isActive ? '#00cc6630' : '#ef444430'
-  const colBg  = isProcessing ? '#00ff8808' : isActive ? '#00cc6608' : '#ef444408'
 
   useEffect(() => { fetchStatus(); connectWS() }, [fetchStatus, connectWS])
   useEffect(() => { if (!isProcessing) return; const iv = setInterval(fetchStatus, 5000); return () => clearInterval(iv) }, [isProcessing, fetchStatus])
@@ -100,7 +99,7 @@ export default function Engine() {
           </div>
           {status.lastLeadsFound>0&&(
             <div style={{display:'inline-flex',alignItems:'center',gap:6,marginTop:10,padding:'4px 12px',background:`${col}18`,border:`1px solid ${col}40`,borderRadius:99,fontSize:12,fontWeight:700,color:col}}>
-              ◈ {status.lastLeadsFound.toLocaleString('fr-CA')} leads — {Math.round((status.lastDuration||0)/1000)}s
+              ◈ {status.lastLeadsFound.toLocaleString(lang === 'fr' ? 'fr-CA' : 'en-CA')} leads — {Math.round((status.lastDuration||0)/1000)}s
             </div>
           )}
         </div>
@@ -128,7 +127,7 @@ export default function Engine() {
 
       {isProcessing&&(
         <div style={{marginBottom:'1.5rem'}}>
-          <ProgressBar percent={status.progress||0} step={status.currentStep||'Initialisation...'} />
+          <ProgressBar percent={status.progress||0} step={status.currentStep||t('engine.init')} />
         </div>
       )}
 

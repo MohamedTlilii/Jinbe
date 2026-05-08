@@ -3,24 +3,15 @@ const express   = require('express');
 const router    = express.Router();
 const Lead      = require('../models/Lead');
 const mongoose  = require('mongoose');
-const { exec }  = require('child_process');
 const axios     = require('axios');
 const fs        = require('fs');
 const path      = require('path');
+const { getDiskSpace } = require('../utils/diskSpace');
 
 const ZIP_PATH     = path.resolve('./temp/req_latest.zip');
 const VERSION_FILE = path.resolve('./temp/last_version.txt');
 const CKAN_ID      = process.env.CKAN_RESOURCE_ID || 'eac1b5f1-d8c0-4690-9c51-316d44ed9d94';
 const CKAN_API     = 'https://www.donneesquebec.ca/recherche/api/3/action/resource_show?id=';
-
-const getDisk = () => new Promise(resolve => {
-  exec('wmic logicaldisk where "DeviceID=\'C:\'" get FreeSpace,Size /format:value', (err, stdout) => {
-    if (err) return resolve(null);
-    const free = parseInt(stdout.match(/FreeSpace=(\d+)/)?.[1] || 0);
-    const size = parseInt(stdout.match(/Size=(\d+)/)?.[1] || 0);
-    resolve({ free, size, used: size - free });
-  });
-});
 
 const SIGNALS = ['nouvelle', 'reouverture', 'demenagement', 'fermeture'];
 
@@ -30,17 +21,16 @@ router.post('/seed/:signal', async (req, res) => {
     const { signal } = req.params;
     if (!SIGNALS.includes(signal)) return res.status(400).json({ error: 'Signal invalide' });
 
-    // Trouver un baseline actif pas encore converti en test
-    const existingTestNeqs = (await Lead.find({ isBaseline: false }, { neq: 1 }).lean()).map(l => l.neq);
+    // Trouver un baseline actif pas encore converti en test (requête directe sans $nin massif)
     const lead = await Lead.findOne({
       isBaseline: true,
       statutREQ: 'Actif',
-      neq: { $nin: existingTestNeqs },
+      signal: 'baseline',
     }).lean();
 
     if (!lead) return res.status(404).json({ error: 'Aucun lead baseline disponible' });
 
-    const update = { signal, isBaseline: false, dateTrouve: new Date() };
+    const update = { signal, isBaseline: false, isTestSeed: true, dateTrouve: new Date() };
     if (signal === 'demenagement') update.previousData = { adresse: '123 Ancienne Adresse, Montréal' };
     if (signal === 'fermeture')    update.statutREQ = 'Fermé';
 
@@ -53,30 +43,30 @@ router.post('/seed/:signal', async (req, res) => {
 router.get('/active', async (req, res) => {
   try {
     const leads = await Lead.find(
-      { isBaseline: false },
+      { isTestSeed: true },
       { neq: 1, signal: 1, nom: 1, ville: 1, adresse: 1, dateTrouve: 1, statutREQ: 1 }
     ).sort({ dateTrouve: -1 }).lean();
     res.json(leads);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Reset tous les leads de test → baseline
+// Reset tous les leads de test → baseline (uniquement les seeds de test, jamais les vrais leads)
 router.delete('/reset', async (req, res) => {
   try {
     const result = await Lead.updateMany(
-      { isBaseline: false, signal: { $in: SIGNALS } },
-      { $set: { signal: 'baseline', isBaseline: true, statutREQ: 'Actif' }, $unset: { previousData: '' } }
+      { isTestSeed: true },
+      { $set: { signal: 'baseline', isBaseline: true, statutREQ: 'Actif', isTestSeed: false }, $unset: { previousData: '' } }
     );
     res.json({ success: true, reset: result.modifiedCount });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Reset un seul lead de test par NEQ
+// Reset un seul lead de test par NEQ (uniquement si c'est un seed)
 router.delete('/reset/:neq', async (req, res) => {
   try {
     await Lead.updateOne(
-      { neq: req.params.neq },
-      { $set: { signal: 'baseline', isBaseline: true, statutREQ: 'Actif' }, $unset: { previousData: '' } }
+      { neq: req.params.neq, isTestSeed: true },
+      { $set: { signal: 'baseline', isBaseline: true, statutREQ: 'Actif', isTestSeed: false }, $unset: { previousData: '' } }
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -87,7 +77,7 @@ router.get('/health-full', async (req, res) => {
   try {
     const mem = process.memoryUsage();
     const [disk, docsCount] = await Promise.all([
-      getDisk(),
+      getDiskSpace(),
       Lead.countDocuments().catch(() => null),
     ]);
     const zipExists = fs.existsSync(ZIP_PATH);

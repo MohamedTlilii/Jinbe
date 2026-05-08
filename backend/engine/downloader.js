@@ -87,7 +87,7 @@ const waitForDownloadedZip = (wsLog, timeoutMs = 300000) => {
   });
 };
 
-const downloadZIP = async (wsLog, onProgress) => {
+const downloadZIP = async (wsLog) => {
   ensureDir(TEMP_DIR);
 
   const pageUrl = await getPageUrl(wsLog);

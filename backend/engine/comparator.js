@@ -18,7 +18,7 @@ const compareAndDetectBatch = async (batch) => {
     } else if (existing.statutREQ !== 'Actif' && lead.statutREQ === 'Actif') {
       lead.signal = 'reouverture';
       results.reouvertures.push(lead);
-    } else if (existing.adresse && existing.adresse.trim().toLowerCase() !== lead.adresse.trim().toLowerCase()) {
+    } else if (existing.adresse && lead.adresse && existing.adresse.trim().toLowerCase() !== lead.adresse.trim().toLowerCase()) {
       lead.signal = 'demenagement';
       lead.previousData = { adresse: existing.adresse };
       results.demenagements.push(lead);
@@ -32,7 +32,7 @@ const compareAndDetectBatch = async (batch) => {
 const detectFermeturesByRunId = async (runId, wsLog) => {
   wsLog('Détection fermetures...');
   const fermetureLeads = await Lead.find(
-    { statutREQ: 'Actif', isBaseline: { $ne: true }, lastRunId: { $ne: runId } },
+    { statutREQ: 'Actif', isBaseline: { $ne: true }, signal: { $ne: 'fermeture' }, lastRunId: { $ne: runId } },
     { neq: 1 }
   ).lean();
   const fermetureNeqs = fermetureLeads.map(l => l.neq);

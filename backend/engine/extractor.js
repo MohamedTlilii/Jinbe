@@ -116,9 +116,6 @@ const buildNomMap = async (nomPath, wsLog) => {
   return map;
 };
 
-// Étape 2 : Streamer Entreprise.csv et appeler onRow pour chaque ligne
-const streamEntreprises = (entreprisePath, onRow) => streamCSV(entreprisePath, onRow);
-
 const prepareData = async (extractDir, wsLog) => {
   const files = fs.readdirSync(extractDir);
   wsLog('Fichiers ZIP : ' + files.join(', '));
@@ -150,4 +147,4 @@ const prepareData = async (extractDir, wsLog) => {
   return { entreprisePath, etablissementsMap, nomMap };
 };
 
-module.exports = { extractZIP, prepareData, streamEntreprises, EXTRACT_DIR, parseCity };
+module.exports = { extractZIP, prepareData };

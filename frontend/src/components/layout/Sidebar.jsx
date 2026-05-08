@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useEngineStore } from '../../store/engineStore'
 import { useUiStore } from '../../store/uiStore'
+import { useT } from '../../i18n/useT'
 import api from '../../utils/api'
 
 const NAV_FR = [
@@ -19,26 +20,13 @@ const NAV_FR = [
   { to: '/database',      icon: '◫', color: '#94a3b8', bg: '#94a3b818', label: 'Base données',   signal: null },
 ]
 
-const NAV_EN = [
-  { to: '/engine',        icon: '⚙', color: '#00d4ff', bg: '#00d4ff18', label: 'Engine',         signal: null },
-  { to: '/dashboard',     icon: '▦', color: '#a78bfa', bg: '#a78bfa18', label: 'Dashboard',      signal: null },
-  { to: '/leads',         icon: '◈', color: '#38bdf8', bg: '#38bdf818', label: 'Leads',          signal: null },
-  { to: '/nouveautes',    icon: '⚡', color: '#fbbf24', bg: '#fbbf2418', label: 'Last run',       signal: null },
-  { to: '/nouvelles',     icon: '✦', color: '#4ade80', bg: '#4ade8018', label: 'New biz',        signal: 'nouvelle' },
-  { to: '/reouvertures',  icon: '↺', color: '#2dd4bf', bg: '#2dd4bf18', label: 'Reopenings',     signal: 'reouverture' },
-  { to: '/demenagements', icon: '→', color: '#fb923c', bg: '#fb923c18', label: 'Relocations',    signal: 'demenagement' },
-  { to: '/fermetures',    icon: '✕', color: '#f87171', bg: '#f8717118', label: 'Closures',       signal: 'fermeture' },
-  { to: '/carte',         icon: '◉', color: '#34d399', bg: '#34d39918', label: 'Map',            signal: null },
-  { to: '/tests',         icon: '⚗', color: '#c084fc', bg: '#c084fc18', label: 'Tests',          signal: null },
-  { to: '/database',      icon: '◫', color: '#94a3b8', bg: '#94a3b818', label: 'Database',       signal: null },
-]
 
-export default function Sidebar() {
+export default function Sidebar({ onLogout }) {
   const { status, fetchStatus, connectWS } = useEngineStore()
-  const { lang, theme, toggleLang, toggleTheme } = useUiStore()
+  const { theme, toggleTheme } = useUiStore()
+  const t = useT()
   const [counts,  setCounts]  = useState({})
   const [version, setVersion] = useState('1.0.0')
-  const NAV = lang === 'fr' ? NAV_FR : NAV_EN
 
   const loadCounts = async () => {
     try {
@@ -60,7 +48,9 @@ export default function Sidebar() {
     loadCounts()
     loadVersion()
     const interval = setInterval(() => { fetchStatus(); loadCounts() }, 15000)
-    return () => clearInterval(interval)
+    const onEngineDone = () => { fetchStatus(); loadCounts() }
+    window.addEventListener('engine:done', onEngineDone)
+    return () => { clearInterval(interval); window.removeEventListener('engine:done', onEngineDone) }
   }, [fetchStatus, connectWS])
 
   return (
@@ -89,7 +79,7 @@ export default function Sidebar() {
               🌊 Jinbe
             </div>
             <div style={{ fontSize: 9, color: '#a0c4ff', marginTop: 2, textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontStyle: 'italic', lineHeight: 1.4 }}>
-              {lang === 'fr' ? '« Chevalier de la Mer »' : '« Knight of the Sea »'}
+              « Chevalier de la Mer »
             </div>
           </div>
         </div>
@@ -148,11 +138,11 @@ export default function Sidebar() {
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: col, letterSpacing: '0.03em' }}>
-                  {status.isProcessing ? 'En cours...' : status.isRunning ? 'Moteur actif' : 'Moteur arrêté'}
+                  {status.isProcessing ? t('status.processing') : status.isRunning ? t('status.active') : t('status.stopped')}
                 </div>
                 {status.lastLeadsFound > 0 && (
                   <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>
-                    {status.lastLeadsFound.toLocaleString('fr-CA')} leads — dernier run
+                    {status.lastLeadsFound.toLocaleString('fr-CA')} {t('status.lastleads')}
                   </div>
                 )}
               </div>
@@ -161,29 +151,8 @@ export default function Sidebar() {
         )
       })()}
 
-      {/* ── Boutons Langue + Thème ── */}
-      <div style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-
-        {/* Langue */}
-        <button
-          onClick={toggleLang}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '7px 12px', borderRadius: 8, cursor: 'pointer', border: 'none',
-            background: '#6c63ff', color: '#fff', fontSize: 12, fontWeight: 700,
-            fontFamily: 'inherit', width: '100%',
-          }}
-        >
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 14 }}>{lang === 'fr' ? '🇫🇷' : '🇬🇧'}</span>
-            {lang === 'fr' ? 'Français' : 'English'}
-          </span>
-          <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 99, padding: '2px 8px', fontSize: 11 }}>
-            {lang === 'fr' ? 'EN →' : 'FR →'}
-          </span>
-        </button>
-
-        {/* Thème */}
+      {/* ── Bouton Thème ── */}
+      <div style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid var(--border)' }}>
         <button
           onClick={toggleTheme}
           style={{
@@ -196,11 +165,8 @@ export default function Sidebar() {
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 14 }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
-            {theme === 'dark'
-              ? (lang === 'fr' ? 'Mode jour' : 'Light mode')
-              : (lang === 'fr' ? 'Mode nuit' : 'Dark mode')}
+            {theme === 'dark' ? 'Mode jour' : 'Mode nuit'}
           </span>
-          {/* Switch */}
           <div style={{ width: 36, height: 18, borderRadius: 99, background: 'rgba(255,255,255,0.3)', position: 'relative' }}>
             <div style={{
               position: 'absolute', top: 2, width: 14, height: 14, borderRadius: '50%',
@@ -213,7 +179,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav style={{ flex: 1, padding: '0.5rem 0', overflowY: 'auto' }}>
-        {NAV.map((item) => (
+        {NAV_FR.map((item) => (
           <NavLink key={item.to} to={item.to} style={({ isActive }) => ({
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '0.45rem 1rem',
@@ -250,9 +216,23 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span></span>
-        <span style={{ color: '#c084fc', fontWeight: 700, fontFamily: 'monospace' }}>v{version}</span>
+      <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <button
+          onClick={onLogout}
+          title="Déconnexion"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '5px 10px', borderRadius: 7,
+            background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
+            color: '#f87171', fontSize: 11, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.5)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.25)' }}
+        >
+          ⏻ Déco
+        </button>
+        <span style={{ color: '#c084fc', fontWeight: 700, fontFamily: 'monospace', fontSize: 11 }}>v{version}</span>
       </div>
 
       <style>{`

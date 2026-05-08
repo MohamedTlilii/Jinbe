@@ -152,4 +152,4 @@ const matchSector = (activityText) => {
   return null;
 };
 
-module.exports = { SECTORS, EXCLUDED_KEYWORDS, isExcluded, matchSector, getActiveSectors };
+module.exports = { matchSector };

@@ -5,6 +5,33 @@ import { ConfirmModal } from '../components/ui/index'
 import { useEngineStore } from '../store/engineStore'
 import { useT } from '../i18n/useT'
 import { useUiStore } from '../store/uiStore'
+import { generateTestPDF } from '../utils/pdf'
+
+const MOCK_LEAD = {
+  signal:         'demenagement',
+  nom:            'Entreprise Test Jinbe inc.',
+  score:          5,
+  statutREQ:      'Actif',
+  adresse:        '123 rue de la Paix',
+  ville:          'Montréal',
+  codePostal:     'H2X 1Y3',
+  province:       'QC',
+  neq:            '1234567890',
+  secteurActivite:'Commerce de détail',
+  secteurMatch:   'Alimentation',
+  categorieSecteur:'general',
+  groupe:         'montreal',
+  dateCreation:   new Date().toISOString(),
+  dateTrouve:     new Date().toISOString(),
+  versionREQ:     new Date().toISOString(),
+  scoreDetails:   { fraicheur: 3, secteur: 2 },
+  previousData:   { adresse: '456 ancienne rue, Laval' },
+  _id:            '69e92fbb97b0276a075ec0c6',
+  __v:            0,
+  isBaseline:     false,
+  createdAt:      new Date().toISOString(),
+  updatedAt:      new Date().toISOString(),
+}
 
 const PRESETS = [10, 20, 50, 100]
 
@@ -15,8 +42,7 @@ const BUMP_TYPES = [
   { type: 'manuel', color: '#fbbf24', icon: '✎', label: 'Manuel', rule: 'x.y.z', desc_fr: 'Saisir le numéro exact que tu veux',      desc_en: 'Enter the exact number you want' },
 ]
 
-const TYPE_COLORS_ALL = { patch: '#4ade80', minor: '#38bdf8', major: '#c084fc', manuel: '#fbbf24' }
-const TYPE_COLORS     = { patch: '#4ade80', minor: '#38bdf8', major: '#c084fc', manuel: '#fbbf24' }
+const TYPE_COLORS = { patch: '#4ade80', minor: '#38bdf8', major: '#c084fc', manuel: '#fbbf24' }
 
 function bumpPreview(v, type) {
   const [a, b, c] = (v || '1.0.0').split('.').map(Number)
@@ -169,10 +195,11 @@ export default function Tests() {
   }
 
   const loadVersion = useCallback(async () => {
-    try { const { data } = await api.get('/version'); setVersionData(data) } catch {}
+    try { const { data } = await api.get('/version'); setVersionData(data) } catch { /* ignore */ }
   }, [])
 
   useEffect(() => { loadVersion() }, [loadVersion])
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = 0 }, [logs])
 
   const doBump = () => {
     if (!bumpType) return
@@ -337,7 +364,7 @@ export default function Tests() {
       setRamData(data)
       setRamHistory(h => [...h.slice(-29), data.heapUsed])
       setRamPeak(p => Math.max(p, data.heapUsed))
-    } catch {}
+    } catch { /* ignore */ }
   }
 
   useEffect(() => {
@@ -418,12 +445,6 @@ export default function Tests() {
             </span>
           </div>
 
-          <div style={{ textAlign:'right' }}>
-            <div style={{ fontSize:42, fontWeight:900, color:'var(--text)', lineHeight:1, letterSpacing:'-0.04em', textShadow:'0 0 40px #c084fc25' }}>
-              {totalActive}
-            </div>
-            <div style={{ fontSize:11, color:'var(--text3)', marginTop:4 }}>{t('tests.activeleads')}</div>
-          </div>
         </div>
       </div>
 
@@ -490,8 +511,8 @@ export default function Tests() {
         </div>
       )}
 
-      {/* ── 3 Test Cards : Diagnostic · RAM · Download ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:'1.25rem', animation:'fadeUp 0.28s ease' }}>
+      {/* ── 4 Test Cards : Diagnostic · RAM · Download · PDF ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:'1.25rem', animation:'fadeUp 0.28s ease' }}>
 
         {/* ① Diagnostic */}
         <div style={{ background:'var(--bg2)', border:'1px solid #22c55e22', borderRadius:14, padding:'1.25rem', display:'flex', flexDirection:'column', gap:12, position:'relative', overflow:'hidden' }}>
@@ -620,6 +641,31 @@ export default function Tests() {
             boxShadow:'0 3px 12px #38bdf830', transition:'all 0.2s',
           }}>
             {lang === 'fr' ? '▶ Vérifier' : '▶ Check'}
+          </button>
+        </div>
+
+        {/* ④ PDF Test */}
+        <div style={{ background:'var(--bg2)', border:'1px solid #a78bfa22', borderRadius:14, padding:'1.25rem', display:'flex', flexDirection:'column', gap:12, position:'relative', overflow:'hidden' }}>
+          <div style={{ position:'absolute', top:-30, right:-30, width:100, height:100, borderRadius:'50%', background:'#a78bfa', opacity:0.04, filter:'blur(28px)', pointerEvents:'none' }} />
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ width:30, height:30, borderRadius:8, background:'#a78bfa18', border:'1px solid #a78bfa28', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, color:'#a78bfa' }}>↓</div>
+            <div>
+              <div style={{ fontSize:9, color:'#a78bfa', fontWeight:700, letterSpacing:'0.18em', textTransform:'uppercase' }}>{lang === 'fr' ? 'Gabarit PDF' : 'PDF Template'}</div>
+              <div style={{ fontSize:13, fontWeight:800, color:'var(--text)' }}>Test PDF</div>
+            </div>
+          </div>
+          <div style={{ fontSize:11, color:'var(--text3)', lineHeight:1.6 }}>
+            {lang === 'fr'
+              ? 'Génère un PDF avec toutes les sections et données fictives pour valider le gabarit.'
+              : 'Generates a PDF with all sections and mock data to validate the template.'}
+          </div>
+          <div style={{ flex:1 }} />
+          <button onClick={() => generateTestPDF()} style={{
+            padding:'8px 0', borderRadius:9, fontSize:12, fontWeight:800,
+            background:'#a78bfa', color:'#fff', border:'none', cursor:'pointer',
+            boxShadow:'0 3px 12px #a78bfa30', transition:'all 0.2s',
+          }}>
+            ↓ {lang === 'fr' ? 'Télécharger PDF test' : 'Download test PDF'}
           </button>
         </div>
       </div>
@@ -932,7 +978,7 @@ export default function Tests() {
           </div>
 
           {bumpType && (() => {
-            const col = TYPE_COLORS_ALL[bumpType]
+            const col = TYPE_COLORS[bumpType]
             const isManuel = bumpType === 'manuel'
             return (
               <div style={{

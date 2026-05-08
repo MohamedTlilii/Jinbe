@@ -3,6 +3,8 @@ import api from '../../utils/api'
 import { ScoreBadge, fmtDate } from './index'
 import { generateLeadPDF } from '../../utils/pdf'
 import { useT } from '../../i18n/useT'
+import { useUiStore } from '../../store/uiStore'
+import { LeadDetailModal } from './LeadDetailModal'
 
 const SCORES = [2, 3, 4, 5, 6]
 
@@ -58,13 +60,15 @@ function SkeletonCard() {
   )
 }
 
-function LeadCard({ lead, color, signal }) {
+function LeadCard({ lead, color, signal, onOpen }) {
+  const t   = useT()
   const [hov, setHov] = useState(false)
 
   return (
     <div
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
+      onClick={onOpen}
       style={{
         background: 'var(--bg2)',
         borderRadius: 14,
@@ -75,7 +79,7 @@ function LeadCard({ lead, color, signal }) {
         transform: hov ? 'translateY(-2px)' : 'none',
         boxShadow: hov ? `0 8px 30px ${color}12` : 'none',
         position: 'relative', overflow: 'hidden',
-        cursor: 'default',
+        cursor: 'pointer',
       }}
     >
       {/* hover glow orb */}
@@ -103,7 +107,7 @@ function LeadCard({ lead, color, signal }) {
       }}>
         {lead.nom || (
           <span style={{ color: 'var(--text3)', fontStyle: 'italic', fontWeight: 400, fontSize: 12 }}>
-            Nom non disponible
+            {t('signal.noname')}
           </span>
         )}
       </div>
@@ -139,15 +143,11 @@ function LeadCard({ lead, color, signal }) {
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-        <Lnk
-          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([lead.adresse, lead.ville, 'QC'].filter(Boolean).join(', '))}`}
-          color="#4285f4" label="📍 Maps"
-        />
-        {signal !== 'fermeture' && <>
-          <Lnk href={`https://www.facebook.com/search/top?q=${encodeURIComponent(lead.nom || lead.secteurMatch || '')}`} color="#3b82f6" label="FB" />
-          <Lnk href={`https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.nom || lead.secteurMatch || '')}`} color="#e879f9" label="IG" />
-          <Lnk href={`https://www.google.com/search?q=${encodeURIComponent(lead.nom || lead.secteurMatch || '')}`} color="#4ade80" label="Web" />
-        </>}
+        <Lnk href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([lead.adresse, lead.ville, 'QC'].filter(Boolean).join(', '))}`} color="#4285f4" label="📍 Maps" />
+        <Lnk href={`https://www.google.com/search?q=${encodeURIComponent([lead.adresse, lead.ville, 'QC', lead.codePostal].filter(Boolean).join(', '))}`} color="#0f9d58" label="🔍 Google" />
+        <Lnk href={`https://www.facebook.com/search/top?q=${encodeURIComponent(lead.nom || lead.secteurMatch || '')}`} color="#3b82f6" label="📘 FB" />
+        <Lnk href={`https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.nom || lead.secteurMatch || '')}`} color="#e879f9" label="📸 IG" />
+        <Lnk href={`https://www.google.com/search?q=${encodeURIComponent(lead.nom || lead.secteurMatch || '')}`} color="#4ade80" label="🌐 Web" />
         <Btn onClick={() => generateLeadPDF(lead)} color="#a78bfa" label="↓ PDF" />
       </div>
     </div>
@@ -155,7 +155,10 @@ function LeadCard({ lead, color, signal }) {
 }
 
 export default function SignalPage({ signal, color, icon, label, emptyMsg }) {
-  const t = useT()
+  const t      = useT()
+  const { lang } = useUiStore()
+  const locale   = lang === 'fr' ? 'fr-CA' : 'en-CA'
+  const [modalLead, setModalLead] = useState(null)
   const REGIONS = [
     { value: '',          label: t('filter.all'), color: '#94a3b8' },
     { value: 'montreal',  label: t('filter.mtl'), color: '#f87171' },
@@ -188,7 +191,7 @@ export default function SignalPage({ signal, color, icon, label, emptyMsg }) {
     setLoading(false)
   }, [filters, signal])
 
-  useEffect(() => { load(1, true) }, [filters])
+  useEffect(() => { load(1, true) }, [load])
 
   const hasFilters = filters.groupe || filters.ville || filters.secteur || filters.score || filters.nom
   const remaining  = total - leads.length
@@ -233,12 +236,12 @@ export default function SignalPage({ signal, color, icon, label, emptyMsg }) {
             lineHeight:1, letterSpacing:'-0.04em',
             textShadow:`0 0 50px ${color}25`,
           }}>
-            {loading && leads.length === 0 ? '—' : total.toLocaleString('fr-CA')}
+            {loading && leads.length === 0 ? '—' : total.toLocaleString(locale)}
           </div>
           <div style={{ fontSize:11, color:'var(--text3)', marginTop:5 }}>{t('signal.total')}</div>
           {leads.length > 0 && leads.length < total && (
             <div style={{ fontSize:10, color:`${color}99`, marginTop:3 }}>
-              {leads.length.toLocaleString('fr-CA')} {t('signal.loaded')} · {pct}%
+              {leads.length.toLocaleString(locale)} {t('signal.loaded')} · {pct}%
             </div>
           )}
         </div>
@@ -359,7 +362,7 @@ export default function SignalPage({ signal, color, icon, label, emptyMsg }) {
             animation:'fadeUp 0.3s ease',
           }}>
             {leads.map(lead => (
-              <LeadCard key={lead._id} lead={lead} color={color} signal={signal} />
+              <LeadCard key={lead._id} lead={lead} color={color} signal={signal} onOpen={() => setModalLead(lead)} />
             ))}
           </div>
 
@@ -380,12 +383,13 @@ export default function SignalPage({ signal, color, icon, label, emptyMsg }) {
                 opacity: loading ? 0.5 : 1, transition:'all 0.2s',
                 boxShadow:`0 0 24px ${color}10`,
               }}>
-                {loading ? t('signal.loading') : `${t('signal.loadMore')} ${remaining.toLocaleString('fr-CA')} ${t('signal.more')}`}
+                {loading ? t('signal.loading') : `${t('signal.loadMore')} ${remaining.toLocaleString(locale)} ${t('signal.more')}`}
               </button>
             </div>
           )}
         </>
       )}
+      {modalLead && <LeadDetailModal lead={modalLead} onClose={() => setModalLead(null)} />}
     </div>
   )
 }

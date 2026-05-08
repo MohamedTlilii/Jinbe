@@ -1,6 +1,7 @@
 // pages/MapPage.jsx — Carte des leads (lookup local instantané)
-import { useState, useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
+import React, { useState, useEffect, useRef } from 'react'
+import { MapContainer, TileLayer, CircleMarker, Circle, Rectangle, Polygon, Marker, Popup, useMap } from 'react-leaflet'
+import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '../utils/api'
 import { generateLeadPDF } from '../utils/pdf'
@@ -145,7 +146,11 @@ const getCoords = (ville) => {
   return CITY_COORDS[ville.toLowerCase()] || CITY_COORDS[raw] || null
 }
 
-const jitter = (r = 0.025) => (Math.random() - 0.5) * r * 2
+const jitter = (id, axis, r = 0.12) => {
+  const n = parseInt((String(id || '')).replace(/\D/g, '').slice(-8) || '12345')
+  const v = axis === 0 ? (n * 9301 + 49297) % 233280 : (n * 3541 + 31337) % 233280
+  return (v / 233280 - 0.5) * r * 2
+}
 
 const GROUP_CENTER = {
   montreal:  [45.5017, -73.5673],
@@ -156,23 +161,35 @@ const GROUP_CENTER = {
 }
 
 const SIGNAL_COLOR = {
-  nouvelle:     '#22c55e',
-  reouverture:  '#f97316',
-  demenagement: '#3b82f6',
-  fermeture:    '#ef4444',
+  nouvelle:     '#4ade80',
+  reouverture:  '#2dd4bf',
+  demenagement: '#fb923c',
+  fermeture:    '#f87171',
 }
 
-function MapFly({ center, zoom }) {
+function LockMinZoom() {
+  const map = useMap()
+  useEffect(() => {
+    map.whenReady(() => {
+      map.setZoom(7, { animate: false })
+      map.setMinZoom(7)
+    })
+  }, [map])
+  return null
+}
+
+function MapFly({ center, zoom, bounds }) {
   const map = useMap()
   const prev = useRef(null)
   useEffect(() => {
-    if (!center) return
-    const key = center.join(',')
+    if (!center && !bounds) return
+    const key = bounds ? `bounds:${bounds[0].join(',')}_${bounds[1].join(',')}` : `center:${center.join(',')}_${zoom}`
     if (key !== prev.current) {
-      map.flyTo(center, zoom, { duration: 1.0 })
+      if (bounds) map.flyToBounds(bounds, { duration: 1.0, padding: [8, 8] })
+      else map.flyTo(center, zoom, { duration: 1.0 })
       prev.current = key
     }
-  }, [center, zoom, map])
+  }, [center, zoom, bounds, map])
   return null
 }
 
@@ -186,16 +203,30 @@ export default function MapPage() {
     fermeture:    t('map.fermeture'),
   }
 
+  const FRAME_BOUNDS = [[44.2, -76.7], [48.0, -69.7]]
+
   const GROUPES = [
-    { id: 'all',       label: t('map.all'),       center: [46.1, -73.0],       zoom: 7  },
-    { id: 'montreal',  label: '🔴 Mtl',            center: [45.5017, -73.5673], zoom: 9  },
-    { id: 'mauricie',  label: '🟡 Mauricie',        center: [46.3430, -72.5470], zoom: 9  },
-    { id: 'quebec',    label: '🔵 Québec',          center: [46.8139, -71.2080], zoom: 10 },
-    { id: 'outaouais', label: '🟠 Outaouais',       center: [45.4765, -75.7013], zoom: 10 },
+    { id: 'all',       label: t('map.all'),       bounds: FRAME_BOUNDS },
+    { id: 'montreal',  label: '🔴 Mtl',            center: [45.5017, -73.5673], zoom: 10 },
+    { id: 'mauricie',  label: '🟡 Mauricie',        center: [46.3430, -72.5470], zoom: 10 },
+    { id: 'quebec',    label: '🔵 Québec',          center: [46.8139, -71.2080], zoom: 11 },
+    { id: 'outaouais', label: '✕ Outaouais',        center: [45.4765, -75.7013], zoom: 11 },
   ]
 
-  const [mapCenter,   setMapCenter]   = useState([46.1, -73.0])
-  const [mapZoom,     setMapZoom]     = useState(7)
+  const ZONE_CIRCLES = [
+    { center: [45.5017, -73.5673], color: '#ef4444', radius: 80000, name: '🔴 Montréal',  region: 'Île-de-Montréal',    driveKey: 'map.drive60' },
+    { center: [46.3432, -72.5428], color: '#eab308', radius: 80000, name: '🟡 Mauricie',   region: 'Trois-Rivières',     driveKey: 'map.drive60' },
+    { center: [46.8139, -71.2080], color: '#3b82f6', radius: 80000, name: '🔵 Québec',     region: 'Capitale-Nationale', driveKey: 'map.drive60' },
+    { center: [45.4765, -75.7013], color: '#ef4444', radius: 40000, ottawa: true },
+    { center: [45.4042, -71.8929], color: '#a855f7', radius: 80000, name: '🟣 Sherbrooke', region: 'Estrie',             driveKey: 'map.drive60' },
+    { center: [45.4000, -72.7333], color: '#06b6d4', radius: 80000, name: '🩵 Granby',     region: 'Montérégie-Est',     driveKey: 'map.drive60' },
+  ]
+
+  const MAP_BOUNDS = [[43.6, -77.5], [48.8, -68.9]]
+
+  const [mapCenter,   setMapCenter]   = useState(null)
+  const [mapZoom,     setMapZoom]     = useState(null)
+  const [mapBounds,   setMapBounds]   = useState(FRAME_BOUNDS)
   const [markers,     setMarkers]     = useState([])
   const [loading,     setLoading]     = useState(false)
   const [activeGroup, setActiveGroup] = useState('all')
@@ -208,18 +239,29 @@ export default function MapPage() {
     sigIndexRef.current = {}
 
     try {
-      const params = { limit: 200 }
+      const params = { limit: 2000 }
       if (groupeId !== 'all') params.groupe = groupeId
 
-      const { data } = await api.get('/leads', { params })
-      const leads = data.leads || []
+      const { data: leadsData } = await api.get('/leads', { params })
+      const leads = leadsData.leads || []
 
       const fallback = (groupeId !== 'all' && GROUP_CENTER[groupeId]) || GROUP_CENTER.default
-      const result = leads.map(lead => {
+      const groups = {}
+      leads.forEach(lead => {
         const coords = getCoords(lead.ville) || fallback
-        return { ...lead, pos: [coords[0] + jitter(0.04), coords[1] + jitter(0.04)] }
+        const key = `${coords[0].toFixed(3)}_${coords[1].toFixed(3)}`
+        if (!groups[key]) groups[key] = { coords, items: [] }
+        groups[key].items.push(lead)
       })
-
+      const result = []
+      Object.values(groups).forEach(({ coords, items }) => {
+        const n = items.length
+        items.forEach((lead, i) => {
+          const angle = n > 1 ? (i / n) * 2 * Math.PI : 0
+          const r = n > 1 ? 0.15 : 0
+          result.push({ ...lead, pos: [coords[0] + r * Math.sin(angle), coords[1] + r * Math.cos(angle)] })
+        })
+      })
       setMarkers(result)
     } catch (e) { console.error(e) }
 
@@ -228,8 +270,15 @@ export default function MapPage() {
 
   const handleGroup = (g) => {
     setActiveGroup(g.id)
-    setMapCenter(g.center)
-    setMapZoom(g.zoom)
+    if (g.bounds) {
+      setMapBounds(g.bounds)
+      setMapCenter(null)
+      setMapZoom(null)
+    } else {
+      setMapCenter(g.center)
+      setMapZoom(g.zoom)
+      setMapBounds(null)
+    }
     loadLeads(g.id)
   }
 
@@ -243,17 +292,18 @@ export default function MapPage() {
 
     const coords = getCoords(v)
     if (coords) {
+      setMapBounds(null)
       setMapCenter(coords)
       setMapZoom(12)
     }
 
     try {
-      const { data } = await api.get('/leads', { params: { ville: v, limit: 100 } })
-      const leads = data.leads || []
+      const { data: leadsData } = await api.get('/leads', { params: { ville: v, limit: 100 } })
+      const leads = leadsData.leads || []
       const fallbackSearch = coords || GROUP_CENTER.default
       const result = leads.map(lead => {
         const c = getCoords(lead.ville) || fallbackSearch
-        return { ...lead, pos: [c[0] + jitter(0.025), c[1] + jitter(0.025)] }
+        return { ...lead, pos: [c[0] + jitter(lead._id, 0, 0.025), c[1] + jitter(lead._id, 1, 0.025)] }
       })
       setMarkers(result)
     } catch (e) { console.error(e) }
@@ -266,6 +316,7 @@ export default function MapPage() {
     if (!ofType.length) return
     const idx = (sigIndexRef.current[signal] || 0) % ofType.length
     sigIndexRef.current[signal] = idx + 1
+    setMapBounds(null)
     setMapCenter(ofType[idx].pos)
     setMapZoom(14)
   }
@@ -307,15 +358,19 @@ export default function MapPage() {
         <div style={{ display:'flex', alignItems:'center', gap:10, zIndex:1, flexWrap:'wrap' }}>
           {/* Région pills */}
           <div style={{ display:'flex', gap:3, background:'var(--bg3)', borderRadius:10, padding:3 }}>
-            {GROUPES.map(g => (
-              <button key={g.id} onClick={() => handleGroup(g)} disabled={loading} style={{
-                padding:'5px 11px', borderRadius:7, fontSize:11, fontWeight:700,
-                border:'none', cursor: loading ? 'not-allowed' : 'pointer', transition:'all 0.15s',
-                background: activeGroup === g.id ? '#34d39922' : 'transparent',
-                color: activeGroup === g.id ? '#34d399' : 'var(--text3)',
-                boxShadow: activeGroup === g.id ? '0 0 8px #34d39922' : 'none',
-              }}>{g.label}</button>
-            ))}
+            {GROUPES.map(g => {
+              const isOttawa = g.id === 'outaouais'
+              const isActive = activeGroup === g.id
+              return (
+                <button key={g.id} onClick={() => handleGroup(g)} disabled={loading} style={{
+                  padding:'5px 11px', borderRadius:7, fontSize:11, fontWeight:700,
+                  border:'none', cursor: loading ? 'not-allowed' : 'pointer', transition:'all 0.15s',
+                  background: isActive ? (isOttawa ? '#ef444422' : '#34d39922') : 'transparent',
+                  color: isOttawa ? '#ef4444' : (isActive ? '#34d399' : 'var(--text3)'),
+                  boxShadow: isActive ? (isOttawa ? '0 0 8px #ef444422' : '0 0 8px #34d39922') : 'none',
+                }}>{g.label}</button>
+              )
+            })}
           </div>
 
           {/* Search */}
@@ -386,17 +441,88 @@ export default function MapPage() {
       {/* Carte */}
       <div style={{ height: 'calc(100vh - 270px)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid var(--border)' }}>
         <MapContainer
-          center={mapCenter}
-          zoom={mapZoom}
+          bounds={FRAME_BOUNDS}
+          boundsOptions={{ padding: [20, 20] }}
           style={{ height: '100%', width: '100%' }}
           zoomControl={true}
-          minZoom={5}
+          maxBounds={MAP_BOUNDS}
+          maxBoundsViscosity={1.0}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           />
-          <MapFly center={mapCenter} zoom={mapZoom} />
+          <LockMinZoom />
+          <MapFly center={mapCenter} zoom={mapZoom} bounds={mapBounds} />
+
+          {/* X rouge sur Ottawa — hors Registre des Entreprises du Québec */}
+          <Marker
+            position={[45.4765, -75.7013]}
+            interactive={false}
+            icon={L.divIcon({
+              className: '',
+              html: '<div style="color:#ef4444;font-size:42px;font-weight:900;line-height:1;text-shadow:0 0 10px #ef4444cc,0 0 3px #000;">✕</div>',
+              iconSize: [44, 44],
+              iconAnchor: [22, 22],
+            })}
+          />
+
+          {/* Masque noir sur tout ce qui est hors du cadre */}
+          <Polygon
+            positions={[
+              [[-90,-180],[-90,180],[90,180],[90,-180]],
+              [[44.2,-76.7],[44.2,-69.7],[48.0,-69.7],[48.0,-76.7]],
+            ]}
+            pathOptions={{ stroke: false, fillColor: '#000', fillOpacity: 0.82 }}
+          />
+
+          {/* Cadre noir épais autour de toute la zone */}
+          <Rectangle
+            bounds={FRAME_BOUNDS}
+            pathOptions={{ color: '#000000', weight: 4, fill: false }}
+          />
+
+          {/* Cercles colorés avec glow */}
+          {ZONE_CIRCLES.map((z, i) => (
+            <React.Fragment key={i}>
+              <Circle
+                center={z.center}
+                radius={z.radius * 1.25}
+                pathOptions={{ color: z.ottawa ? '#ef4444' : z.color, weight: 0, fillColor: z.ottawa ? '#1a1a2e' : z.color, fillOpacity: z.ottawa ? 0.18 : 0.08 }}
+              />
+              <Circle
+                center={z.center}
+                radius={z.radius}
+                pathOptions={{ color: z.ottawa ? '#ef4444' : z.color, weight: z.ottawa ? 3 : 2.5, fillColor: z.ottawa ? '#0f0f1a' : z.color, fillOpacity: z.ottawa ? 0.55 : 0.25, dashArray: z.ottawa ? '8,5' : undefined }}
+              >
+                {z.ottawa ? (
+                  <Popup>
+                    <div style={{ fontFamily:'sans-serif', fontSize:13, maxWidth:220 }}>
+                      <div style={{ fontWeight:700, color:'#ef4444', marginBottom:6 }}>{t('map.ottawa.title')}</div>
+                      <div style={{ color:'#555', lineHeight:1.5 }}>{t('map.ottawa.desc')}</div>
+                    </div>
+                  </Popup>
+                ) : (
+                  <Popup>
+                    <div style={{ fontFamily:'sans-serif', fontSize:13, maxWidth:230 }}>
+                      <div style={{ fontWeight:800, color: z.color, fontSize:15, marginBottom:4 }}>{z.name}</div>
+                      <div style={{ color:'#666', fontSize:11, marginBottom:8 }}>{z.region}</div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', background:'#f5f5f5', borderRadius:7, padding:'5px 10px' }}>
+                          <span style={{ color:'#888', fontSize:11 }}>{t('map.zone.rayon')}</span>
+                          <span style={{ fontWeight:700, color:'#222' }}>{z.radius / 1000} km</span>
+                        </div>
+                        <div style={{ display:'flex', justifyContent:'space-between', background:'#f5f5f5', borderRadius:7, padding:'5px 10px' }}>
+                          <span style={{ color:'#888', fontSize:11 }}>{t('map.zone.temps')}</span>
+                          <span style={{ fontWeight:700, color:'#222' }}>{t(z.driveKey)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Popup>
+                )}
+              </Circle>
+            </React.Fragment>
+          ))}
 
           {markers.map(lead => (
             <CircleMarker
@@ -419,16 +545,13 @@ export default function MapPage() {
                   <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>{lead.adresse}</div>
                   <div style={{ fontSize: 11, color: '#555', marginBottom: 6 }}>{lead.ville} · {lead.codePostal}</div>
                   <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>{t('common.score')} : {lead.score}/6 · NEQ {lead.neq}</div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <a
-                      href={`https://www.google.com/search?q=${encodeURIComponent([lead.adresse, lead.ville, 'QC'].filter(Boolean).join(', '))}`}
-                      target="_blank" rel="noreferrer"
-                      style={{ fontSize: 11, padding: '3px 8px', background: '#1a73e81a', color: '#1a73e8', border: '1px solid #1a73e844', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}
-                    >📍 Google</a>
-                    <button
-                      onClick={() => generateLeadPDF(lead)}
-                      style={{ fontSize: 11, padding: '3px 8px', background: '#6c63ff1a', color: '#6c63ff', border: '1px solid #6c63ff44', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}
-                    >↓ PDF</button>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                    <a href={`https://www.google.com/maps/search/?q=${encodeURIComponent([lead.adresse, lead.ville, 'QC', lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={{ fontSize: 10, padding: '3px 7px', background: '#1a73e81a', color: '#1a73e8', border: '1px solid #1a73e844', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}>📍 Maps</a>
+                    <a href={`https://www.google.com/search?q=${encodeURIComponent([lead.adresse, lead.ville, 'QC', lead.codePostal].filter(Boolean).join(', '))}`} target="_blank" rel="noreferrer" style={{ fontSize: 10, padding: '3px 7px', background: '#0f9d581a', color: '#0f9d58', border: '1px solid #0f9d5844', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}>🔍 Google</a>
+                    <a href={`https://www.facebook.com/search/top?q=${encodeURIComponent(lead.nom || '')}`} target="_blank" rel="noreferrer" style={{ fontSize: 10, padding: '3px 7px', background: '#18529d1a', color: '#18529d', border: '1px solid #18529d44', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}>📘 FB</a>
+                    <a href={`https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.nom || '')}`} target="_blank" rel="noreferrer" style={{ fontSize: 10, padding: '3px 7px', background: '#e10a7d1a', color: '#e10a7d', border: '1px solid #e10a7d44', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}>📸 IG</a>
+                    <a href={`https://www.google.com/search?q=${encodeURIComponent(lead.nom || '')}`} target="_blank" rel="noreferrer" style={{ fontSize: 10, padding: '3px 7px', background: '#22c55e1a', color: '#22c55e', border: '1px solid #22c55e44', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}>🌐 Web</a>
+                    <button onClick={() => generateLeadPDF(lead)} style={{ fontSize: 10, padding: '3px 7px', background: '#6c63ff1a', color: '#6c63ff', border: '1px solid #6c63ff44', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>↓ PDF</button>
                   </div>
                 </div>
               </Popup>

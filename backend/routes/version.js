@@ -11,7 +11,13 @@ const read = () => {
     fs.writeFileSync(FILE, JSON.stringify(init, null, 2))
     return init
   }
-  return JSON.parse(fs.readFileSync(FILE, 'utf-8'))
+  try {
+    return JSON.parse(fs.readFileSync(FILE, 'utf-8'))
+  } catch {
+    const init = { version: '1.0.0', history: [{ version: '1.0.0', type: 'major', note: 'Version initiale', date: new Date().toISOString() }] }
+    fs.writeFileSync(FILE, JSON.stringify(init, null, 2))
+    return init
+  }
 }
 
 const bump = (v, type) => {

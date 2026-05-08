@@ -3,18 +3,9 @@ const express  = require('express');
 const router   = express.Router();
 const Lead     = require('../models/Lead');
 const mongoose = require('mongoose');
-const { exec } = require('child_process');
+const { getDiskSpace } = require('../utils/diskSpace');
 
 const LEADS_FILTER = { isBaseline: { $ne: true } };
-
-const getDiskSpace = () => new Promise((resolve) => {
-  exec('wmic logicaldisk where "DeviceID=\'C:\'" get FreeSpace,Size /format:value', (err, stdout) => {
-    if (err) { resolve(null); return; }
-    const free = parseInt(stdout.match(/FreeSpace=(\d+)/)?.[1] || 0);
-    const size = parseInt(stdout.match(/Size=(\d+)/)?.[1] || 0);
-    resolve({ free, size, used: size - free });
-  });
-});
 
 router.get('/storage', async (req, res) => {
   try {
@@ -69,6 +60,19 @@ router.get('/signals', async (req, res) => {
       Lead.countDocuments({ isBaseline: { $ne: true }, signal: 'fermeture' }),
     ]);
     res.json({ nouvelle, reouverture, demenagement, fermeture });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/scores', async (req, res) => {
+  try {
+    const data = await Lead.aggregate([
+      { $match: { isBaseline: { $ne: true } } },
+      { $group: { _id: '$score', count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ]);
+    const map = {};
+    data.forEach(d => { map[d._id] = d.count; });
+    res.json(map);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

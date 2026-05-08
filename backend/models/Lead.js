@@ -15,7 +15,8 @@ const LeadSchema = new mongoose.Schema({
   dateCreation:     { type: Date, index: true },
   dateTrouve:       { type: Date, default: Date.now, index: true },
   statutREQ:        { type: String, enum: ['Actif','Inactif','Radié','Fusionné','Fermé'], default: 'Actif' },
-  signal:           { type: String, enum: ['nouvelle','reouverture','demenagement','nouvelle_activite','fermeture','baseline'], default: 'nouvelle' },
+  signal:           { type: String, enum: ['nouvelle','reouverture','demenagement','fermeture','baseline'], default: 'nouvelle' },
+  isTestSeed:       { type: Boolean, default: false, index: true },
   score:            { type: Number, min: 1, max: 6, default: 1, index: true },
   scoreDetails:     { fraicheur: { type: Number, default: 0 }, secteur: { type: Number, default: 0 } },
   isBaseline:       { type: Boolean, default: false, index: true },
@@ -27,5 +28,7 @@ const LeadSchema = new mongoose.Schema({
 LeadSchema.index({ ville: 1, score: -1 });
 LeadSchema.index({ dateTrouve: -1 });
 LeadSchema.index({ isBaseline: 1, dateTrouve: -1 });
+LeadSchema.index({ signal: 1, isBaseline: 1 });
+LeadSchema.index({ versionREQ: 1 });
 
 module.exports = mongoose.model('Lead', LeadSchema);

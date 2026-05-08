@@ -1,4 +1,5 @@
 // App.jsx — Router principal
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Sidebar from './components/layout/Sidebar'
 import Dashboard     from './pages/Dashboard'
@@ -12,13 +13,30 @@ import Fermetures    from './pages/Fermetures'
 import Reouvertures  from './pages/Reouvertures'
 import MapPage       from './pages/MapPage'
 import Tests         from './pages/Tests'
+import Intro         from './pages/Intro'
+import Login         from './pages/Login'
 import SignalAlerts  from './components/ui/SignalAlerts'
 
+const isAuthenticated = () => !!localStorage.getItem('jimbe_token')
+
 export default function App() {
+  const [authed,    setAuthed]    = useState(isAuthenticated)
+  const [showIntro, setShowIntro] = useState(() => !localStorage.getItem('intro_seen'))
+
+  const handleLogin = () => setAuthed(true)
+
+  const handleLogout = () => {
+    localStorage.removeItem('jimbe_token')
+    setAuthed(false)
+  }
+
+  if (!authed) return <Login onLogin={handleLogin} />
+
   return (
     <BrowserRouter>
+      {showIntro && <Intro onDone={() => setShowIntro(false)} />}
       <div style={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar />
+        <Sidebar onLogout={handleLogout} />
         <main style={{ flex: 1, marginLeft: 'var(--sidebar)', padding: '2rem', maxWidth: 'calc(100vw - var(--sidebar))' }}>
           <Routes>
             <Route path="/"               element={<Navigate to="/dashboard" replace />} />
@@ -33,6 +51,7 @@ export default function App() {
             <Route path="/database"       element={<Database />} />
             <Route path="/carte"          element={<MapPage />} />
             <Route path="/tests"          element={<Tests />} />
+            <Route path="*"               element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
       </div>

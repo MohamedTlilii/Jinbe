@@ -61,7 +61,7 @@ function playSound(type) {
     }
 
     setTimeout(() => ctx.close(), 3000)
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 const DURATION = 6000
@@ -74,16 +74,17 @@ function Toast({ toast, onDismiss }) {
 
   const sig = SIGNALS.find(s => s.key === toast.signal)
 
-  useEffect(() => {
-    requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)))
-    timerRef.current = setTimeout(startLeave, DURATION)
-    return () => clearTimeout(timerRef.current)
-  }, [])
-
   const startLeave = () => {
     setLeave(true)
     setTimeout(onDismiss, 420)
   }
+
+  useEffect(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setShow(true)))
+    timerRef.current = setTimeout(startLeave, DURATION)
+    return () => clearTimeout(timerRef.current)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleClick = () => {
     navigate(sig.route)
@@ -199,7 +200,7 @@ export default function SignalAlerts() {
         setToasts(t => [...t, ...batch])
         sounds.forEach((s, i) => setTimeout(() => playSound(s), i * 380))
       }
-    } catch {}
+    } catch { /* ignore */ }
   }
 
   useEffect(() => {

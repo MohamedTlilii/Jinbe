@@ -51,8 +51,6 @@ const runFullProcess = async (force = false, resetDB = false, testLimit = 0) => 
   let runIsBaseline = false;
 
   try {
-    const settings = { periodJours: 0, scoreMinimum: 1 };
-
     if (resetDB) {
       wsLog('Suppression de la base de données...');
       await Lead.deleteMany({});
@@ -75,7 +73,7 @@ const runFullProcess = async (force = false, resetDB = false, testLimit = 0) => 
     if (zipExists) {
       wsLog('ZIP déjà présent dans temp/ — téléchargement ignoré');
     } else {
-      await downloadZIP(wsLog, (pct) => wsProgress('Téléchargement...', 10 + Math.round(pct * 0.4)));
+      await downloadZIP(wsLog);
     }
 
     wsProgress('Extraction CSV...', 55);
@@ -90,7 +88,7 @@ const runFullProcess = async (force = false, resetDB = false, testLimit = 0) => 
       wsProgress('Chargement baseline MongoDB...', 75);
       wsLog('Chargement de tout le registre en baseline (par batches de 50 000)...');
 
-      await filterAndEnrich(entreprisePath, etablissementsMap, nomMap, settings, wsLog, async (batch) => {
+      await filterAndEnrich(entreprisePath, etablissementsMap, nomMap, wsLog, async (batch) => {
         const baselineBatch = batch.map(l => ({ ...l, signal: 'baseline' }));
         const ops = baselineBatch.map(lead => ({
           updateOne: {
@@ -116,34 +114,42 @@ const runFullProcess = async (force = false, resetDB = false, testLimit = 0) => 
       const reouvertures = [];
       const demenagements = [];
 
-      // Lecture CSV en streaming + comparaison par batch de 500 via MongoDB $in
-      await filterAndEnrich(entreprisePath, etablissementsMap, nomMap, settings, wsLog, async (batch) => {
+      const COMPARE_CHUNK = 500;
+
+      // Lecture CSV en streaming + comparaison par sous-batches de 500 via MongoDB $in
+      await filterAndEnrich(entreprisePath, etablissementsMap, nomMap, wsLog, async (batch) => {
         processedCount += batch.length;
 
-        const { nouvelles: bN, reouvertures: bR, demenagements: bD } = await compareAndDetectBatch(batch);
-        nouvelles.push(...bN);
-        reouvertures.push(...bR);
-        demenagements.push(...bD);
+        for (let i = 0; i < batch.length; i += COMPARE_CHUNK) {
+          const sub = batch.slice(i, i + COMPARE_CHUNK);
+          const { nouvelles: bN, reouvertures: bR, demenagements: bD } = await compareAndDetectBatch(sub);
+          nouvelles.push(...bN);
+          reouvertures.push(...bR);
+          demenagements.push(...bD);
 
-        const toSave = [...bN, ...bR, ...bD];
-        if (toSave.length > 0) {
-          const ops = toSave.map(lead => ({
-            updateOne: {
-              filter: { neq: lead.neq },
-              update: { $set: { ...lead, versionREQ: version, dateTrouve: new Date(), isBaseline: false, lastRunId: runId } },
-              upsert: true,
-            }
-          }));
-          await Lead.bulkWrite(ops, { ordered: false });
-          saved += toSave.length;
-          wsLog('Détectés : ' + saved.toLocaleString('fr-CA'));
+          const toSave = [...bN, ...bR, ...bD];
+          if (toSave.length > 0) {
+            const ops = toSave.map(lead => ({
+              updateOne: {
+                filter: { neq: lead.neq },
+                update: { $set: { ...lead, versionREQ: version, dateTrouve: new Date(), isBaseline: false, lastRunId: runId } },
+                upsert: true,
+              }
+            }));
+            await Lead.bulkWrite(ops, { ordered: false });
+            saved += toSave.length;
+            wsLog('Détectés : ' + saved.toLocaleString('fr-CA'));
+          }
         }
 
-        // Marquer tous les NEQ du batch comme "vus" — remplace le Set en RAM
-        await Lead.updateMany(
-          { neq: { $in: batch.map(l => l.neq) } },
-          { $set: { lastRunId: runId } }
-        );
+        // Marquer tous les NEQ du batch comme "vus" par sous-chunks
+        const SEEN_CHUNK = 5000;
+        for (let i = 0; i < batch.length; i += SEEN_CHUNK) {
+          await Lead.updateMany(
+            { neq: { $in: batch.slice(i, i + SEEN_CHUNK).map(l => l.neq) } },
+            { $set: { lastRunId: runId } }
+          );
+        }
 
         wsProgress('Traitement...', 75 + Math.min(15, Math.round(processedCount / 200000)));
       }, testLimit);
@@ -157,7 +163,7 @@ const runFullProcess = async (force = false, resetDB = false, testLimit = 0) => 
         for (let i = 0; i < fermetureNeqs.length; i += FCHUNK) {
           await Lead.updateMany(
             { neq: { $in: fermetureNeqs.slice(i, i + FCHUNK) } },
-            { signal: 'fermeture', statutREQ: 'Fermé', versionREQ: version, dateTrouve: new Date() }
+            { $set: { signal: 'fermeture', statutREQ: 'Fermé', versionREQ: version, dateTrouve: new Date() } }
           );
         }
         saved += fermetureNeqs.length;
@@ -208,7 +214,7 @@ const runFullProcess = async (force = false, resetDB = false, testLimit = 0) => 
   }
 };
 
-const startEngine = (ws) => { wsServer = ws; };
+const startEngine = (ws) => { wsServer = ws; engineState.isRunning = true; };
 const stopEngine  = () => { engineState.isRunning = false; engineState.nextRun = null; };
 const runManual   = async (ws) => { wsServer = ws; wsLog('Lancement manuel'); await runFullProcess(true); };
 const runReset    = async (ws) => { wsServer = ws; wsLog('Reset + rechargement complet'); await runFullProcess(true, true); };

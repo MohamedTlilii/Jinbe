@@ -61,20 +61,32 @@ export const useEngineStore = create((set, get) => ({
 
   clearLogs: () => set({ logs: [] }),
 
+  _wsRetries: 0,
+
   // Connecter le WebSocket pour logs temps réel
   connectWS: () => {
     if (get().ws) return
-    const ws = new WebSocket('ws://localhost:3001')
+    const wsHost = window.location.hostname || 'localhost'
+    const ws = new WebSocket(`ws://${wsHost}:3001`)
+    ws.onopen  = () => set({ _wsRetries: 0 })
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      if (data.type === 'log')      get().addLog(data.message)
-      if (data.type === 'progress') set((state) => ({ status: { ...state.status, progress: data.percent, currentStep: data.step } }))
-      if (data.type === 'done') {
-        get().fetchStatus()
-        window.dispatchEvent(new Event('engine:done'))
-      }
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'log')      get().addLog(data.message)
+        if (data.type === 'progress') set((state) => ({ status: { ...state.status, progress: data.percent, currentStep: data.step } }))
+        if (data.type === 'done') {
+          get().fetchStatus()
+          window.dispatchEvent(new Event('engine:done'))
+        }
+      } catch { /* message WS non-JSON ignoré */ }
     }
-    ws.onclose = () => { set({ ws: null }); setTimeout(() => get().connectWS(), 3000) }
+    ws.onclose = () => {
+      set({ ws: null })
+      const retries = get()._wsRetries + 1
+      set({ _wsRetries: retries })
+      const delay = Math.min(3000 * Math.pow(1.3, Math.min(retries - 1, 15)), 30000)
+      setTimeout(() => get().connectWS(), delay)
+    }
     set({ ws })
   },
 }))

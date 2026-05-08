@@ -1,6 +1,18 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.3",
   "history": [
+    {
+      "version": "1.0.3",
+      "type": "patch",
+      "note": "mix !!",
+      "date": "2026-04-30T00:11:41.813Z"
+    },
+    {
+      "version": "1.0.2",
+      "type": "patch",
+      "note": "Fr-AN",
+      "date": "2026-04-25T22:27:39.756Z"
+    },
     {
       "version": "1.0.1",
       "type": "patch",
