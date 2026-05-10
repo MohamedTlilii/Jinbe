@@ -20,7 +20,7 @@ const checkForNewVersion = async (wsLog) => {
   wsLog('Vérification nouvelle version REQ...');
   const currentVersion = getLastVersion();
   const today = new Date().toISOString().slice(0, 10);
-  const zipExists = fs.existsSync(ZIP_PATH) && fs.statSync(ZIP_PATH).size > 1024;
+  const zipExists = fs.existsSync(ZIP_PATH) && fs.statSync(ZIP_PATH).size > 1024 * 100;
 
   if (currentVersion && currentVersion.slice(0, 10) === today && zipExists) {
     wsLog('Données déjà téléchargées aujourd\'hui');

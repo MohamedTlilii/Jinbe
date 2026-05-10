@@ -56,9 +56,20 @@ router.get('/', async (req, res) => {
 router.get('/calendar', async (req, res) => {
   try {
     const { month, year, signal, ville, score } = req.query;
-    // Dates UTC alignées sur America/Toronto (EST=UTC-5, EDT=UTC-4) pour cohérence avec l'agrégat MongoDB
-    const startDate = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, 1, 5));
-    const endDate   = new Date(Date.UTC(parseInt(year), parseInt(month), 1, 4, 59, 59, 999));
+    // Dates UTC alignées sur America/Toronto (EST=UTC-5, EDT=UTC-4) — détection DST dynamique
+    const torontoOffset = (isoDay) => {
+      const noon = new Date(isoDay + 'T12:00:00Z');
+      const h = parseInt(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', hour: 'numeric', hour12: false }).format(noon), 10);
+      return 12 - h;
+    };
+    const y = parseInt(year), m = parseInt(month);
+    const dayStart = `${y}-${String(m).padStart(2,'0')}-01`;
+    const dayEnd   = `${m === 12 ? y+1 : y}-${String(m === 12 ? 1 : m+1).padStart(2,'0')}-01`;
+    const startDate = new Date(dayStart + 'T00:00:00Z');
+    startDate.setUTCHours(torontoOffset(dayStart));
+    const endDate = new Date(dayEnd + 'T00:00:00Z');
+    endDate.setUTCHours(torontoOffset(dayEnd));
+    endDate.setTime(endDate.getTime() - 1);
     const match = { dateTrouve: { $gte: startDate, $lte: endDate }, isBaseline: { $ne: true }, signal: { $ne: 'fermeture' } };
     if (signal) match.signal = signal;
     if (ville)  match.ville  = new RegExp(ville.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -69,16 +80,6 @@ router.get('/calendar', async (req, res) => {
       { $sort: { '_id.day': 1 } },
     ]);
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.get('/stats-registry', async (req, res) => {
-  try {
-    const total    = await Lead.countDocuments();
-    const baseline = await Lead.countDocuments({ isBaseline: true });
-    const leads    = await Lead.countDocuments({ isBaseline: { $ne: true } });
-    const actifs   = await Lead.countDocuments({ statutREQ: 'Actif' });
-    res.json({ total, baseline, leads, actifs });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -79,8 +79,8 @@ router.get('/scores', async (req, res) => {
 router.get('/:year', async (req, res) => {
   try {
     const year  = parseInt(req.params.year);
-    const start = new Date(year, 0, 1);
-    const end   = new Date(year, 11, 31, 23, 59, 59);
+    const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
+    const end   = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
 
     const baseFilter = { ...LEADS_FILTER, dateTrouve: { $gte: start, $lte: end } };
 

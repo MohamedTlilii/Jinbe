@@ -99,9 +99,11 @@ export default function Nouveautes() {
 
   const grouped  = {}
   for (const s of SECTIONS) grouped[s.signal] = leads.filter(l => l.signal === s.signal)
-  const total    = totalCount
   const lastRun  = runs[0] || null
   const prevRun  = runs[1] || null
+  // Compter par signal depuis RunHistory (exact) plutôt que depuis les leads affichés (limité à 500)
+  const countBySignal = (sig) => lastRun?.counts?.[sig] || grouped[sig]?.length || 0
+  const total    = SECTIONS.reduce((s, sec) => s + countBySignal(sec.signal), 0) || totalCount
   const runDate  = version ? new Date(version).toLocaleString('fr-CA') : null
   const diff     = (sig) => lastRun && prevRun ? (lastRun.counts?.[sig]||0) - (prevRun.counts?.[sig]||0) : null
 
@@ -224,7 +226,7 @@ export default function Nouveautes() {
           {/* 4 stat cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: '1.75rem' }}>
             {SECTIONS.map(({ signal, label, color, icon }) => {
-              const count = grouped[signal]?.length || 0
+              const count = countBySignal(signal)
               const d = diff(signal)
               const pct = total > 0 ? Math.round((count/total)*100) : 0
               return (
